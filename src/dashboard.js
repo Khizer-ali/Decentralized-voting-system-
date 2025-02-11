@@ -2,6 +2,8 @@ let web3;
 let votingContract;
 let currentAccount;
 let toast;
+let currentRole = 'voter';
+let isAdmin = false;
 
 // Initialize the application
 window.addEventListener('load', async () => {
@@ -12,6 +14,47 @@ window.addEventListener('load', async () => {
     preventDoubleSubmission('createElectionForm');
     preventDoubleSubmission('voteForm');
     preventDoubleSubmission('resultsForm');
+    
+    // Check if user is admin
+    isAdmin = await votingContract.methods.admins(currentAccount).call();
+    
+    // Set initial role - if admin, start in admin mode, otherwise voter mode
+    currentRole = isAdmin ? 'admin' : 'voter';
+    await switchRole(currentRole);
+
+    // Set minimum datetime for election creation
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 1); // Set minimum time to 1 minute from now
+    
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
+    
+    if (startTimeInput && endTimeInput) {
+        // Format datetime for input
+        const minDateTime = now.toISOString().slice(0, 16);
+        startTimeInput.min = minDateTime;
+        endTimeInput.min = minDateTime;
+        
+        // Set default values
+        startTimeInput.value = minDateTime;
+        
+        // Set default end time to 24 hours after start time
+        const defaultEnd = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+        endTimeInput.value = defaultEnd.toISOString().slice(0, 16);
+        
+        // Update end time min value when start time changes
+        startTimeInput.addEventListener('change', function() {
+            const newStartTime = new Date(this.value);
+            const minEndTime = new Date(newStartTime.getTime() + (60 * 1000)); // At least 1 minute after start
+            endTimeInput.min = minEndTime.toISOString().slice(0, 16);
+            
+            // If current end time is before new start time, update it
+            if (new Date(endTimeInput.value) <= newStartTime) {
+                const newEndTime = new Date(newStartTime.getTime() + (24 * 60 * 60 * 1000));
+                endTimeInput.value = newEndTime.toISOString().slice(0, 16);
+            }
+        });
+    }
 });
 
 // Initialize Web3
@@ -75,41 +118,57 @@ function showStep(stepNumber) {
 // Create Election
 async function createElection(event) {
     event.preventDefault();
-    
+    if (!isAdmin) {
+        showNotification('Only admins can create elections', 'danger');
+        return false;
+    }
+
     try {
         const electionName = document.getElementById('electionName').value.trim();
-        if (!electionName) {
-            throw new Error('Election name cannot be empty');
+        // Get the input values
+        const startDateTime = document.getElementById('startTime').value;
+        const endDateTime = document.getElementById('endTime').value;
+        
+        if (!startDateTime || !endDateTime) {
+            throw new Error('Please select both start and end times');
         }
         
-        // Disable the form while processing
+        // Convert to Unix timestamps (seconds)
+        const startTime = Math.floor(new Date(startDateTime).getTime() / 1000);
+        const endTime = Math.floor(new Date(endDateTime).getTime() / 1000);
+        const currentTime = Math.floor(Date.now() / 1000);
+        
+        // Validate times
+        if (startTime <= currentTime) {
+            throw new Error('Start time must be in the future');
+        }
+        
+        if (endTime <= startTime) {
+            throw new Error('End time must be after start time');
+        }
+        
+        const thirtyDays = 30 * 24 * 60 * 60; // 30 days in seconds
+        if (endTime - startTime > thirtyDays) {
+            throw new Error('Election duration cannot exceed 30 days');
+        }
+
+        // Disable form while processing
         const form = document.getElementById('createElectionForm');
         form.querySelectorAll('input, button').forEach(el => el.disabled = true);
         toggleLoading(true);
 
-        // Check if election with this name already exists
-        const electionCount = await votingContract.methods.electionCount().call();
-        for (let i = 1; i <= electionCount; i++) {
-            const election = await votingContract.methods.elections(i).call();
-            if (election.name === electionName) {
-                throw new Error('Election with this name already exists');
-            }
-        }
-
-        // Create new election
-        const result = await votingContract.methods.createElection(electionName)
+        // Create election
+        const result = await votingContract.methods.createElection(electionName, startTime, endTime)
             .send({ 
-                from: currentAccount, 
-                gas: 200000 
+                from: currentAccount,
+                gas: 500000
             });
-        
+
         if (result.status) {
-            const electionId = result.events.ElectionCreated.returnValues.electionId;
-            showNotification(`Election "${electionName}" created successfully! ID: ${electionId}`, 'success');
+            showNotification('Election created successfully!', 'success');
             form.reset();
-            await loadActiveElections();
-            showStep(2);
             await updateElectionDropdown();
+            showStep(2); // Move to add candidates step
         }
     } catch (error) {
         showNotification('Failed to create election: ' + error.message, 'danger');
@@ -136,13 +195,20 @@ async function addCandidate(event) {
             throw new Error('Candidate name cannot be empty');
         }
 
+        // Check if election exists and if voting has started
+        const election = await votingContract.methods.elections(electionId).call();
+        const currentTime = Math.floor(Date.now() / 1000);
+        
+        if (currentTime >= election.startTime) {
+            throw new Error('Cannot add candidates after voting has started');
+        }
+
         // Disable the form while processing
         const form = document.getElementById('addCandidateForm');
         form.querySelectorAll('input, button, select').forEach(el => el.disabled = true);
         toggleLoading(true);
 
         // Check if candidate already exists in this election
-        const election = await votingContract.methods.elections(electionId).call();
         for (let i = 1; i <= election.candidateCount; i++) {
             const candidate = await votingContract.methods.getCandidate(electionId, i).call();
             if (candidate[1] === candidateName) {
@@ -154,7 +220,7 @@ async function addCandidate(event) {
         const result = await votingContract.methods.addCandidate(electionId, candidateName)
             .send({ 
                 from: currentAccount, 
-                gas: 200000 
+                gas: 300000  // Increased gas limit
             });
 
         if (result.status) {
@@ -178,17 +244,31 @@ async function castVote(event) {
     event.preventDefault();
     
     try {
+        // Check if user is admin
+        const isUserAdmin = await votingContract.methods.admins(currentAccount).call();
+        if (isUserAdmin) {
+            throw new Error('Administrators cannot vote. Please use a different account for voting.');
+        }
+
         const electionId = document.getElementById('voteElectionId').value;
         const candidateId = document.getElementById('voteCandidateId').value;
         
-        if (!electionId) {
-            throw new Error('Please select an election');
-        }
-        if (!candidateId) {
-            throw new Error('Please select a candidate');
+        if (!electionId || !candidateId) {
+            throw new Error('Please select both an election and a candidate');
         }
 
-        // Disable the form while processing
+        // Check if voting is open
+        const election = await votingContract.methods.elections(electionId).call();
+        const currentTime = Math.floor(Date.now() / 1000);
+        
+        if (currentTime < election.startTime) {
+            throw new Error('Voting has not started yet');
+        }
+        if (currentTime > election.endTime) {
+            throw new Error('Voting has ended');
+        }
+
+        // Disable form while processing
         const form = document.getElementById('voteForm');
         form.querySelectorAll('input, button, select').forEach(el => el.disabled = true);
         toggleLoading(true);
@@ -476,6 +556,27 @@ function preventDoubleSubmission(formId) {
     });
 }
 
+// Add this helper function
+async function checkElectionStatus(electionId) {
+    const election = await votingContract.methods.elections(electionId).call();
+    const currentTime = Math.floor(Date.now() / 1000);
+    
+    if (!election.exists) {
+        throw new Error('Election does not exist');
+    }
+    
+    if (!election.isActive) {
+        throw new Error('Election is not active');
+    }
+    
+    return {
+        hasStarted: currentTime >= election.startTime,
+        hasEnded: currentTime > election.endTime,
+        startTime: election.startTime,
+        endTime: election.endTime
+    };
+}
+
 // Function to update election dropdown
 async function updateElectionDropdown() {
     try {
@@ -484,7 +585,9 @@ async function updateElectionDropdown() {
         const voteDropdown = document.getElementById('voteElectionId');
         
         // Clear dropdowns
-        candidateDropdown.innerHTML = '<option value="">Choose an active election...</option>';
+        if (candidateDropdown) {
+            candidateDropdown.innerHTML = '<option value="">Choose an active election...</option>';
+        }
         if (voteDropdown) {
             voteDropdown.innerHTML = '<option value="">Choose an active election...</option>';
         }
@@ -492,17 +595,30 @@ async function updateElectionDropdown() {
         // Create a Map to store unique elections
         const uniqueElections = new Map();
 
+        // Get current timestamp
+        const currentTime = Math.floor(Date.now() / 1000);
+
         // Collect all valid elections
         for (let i = 1; i <= electionCount; i++) {
             const election = await votingContract.methods.elections(i).call();
-            // Only add if election exists, is active, and not already added
-            if (election.id !== '0' && election.isActive) {
+            const status = await checkElectionStatus(i).catch(() => null);
+            
+            if (status && election.exists && election.isActive) {
                 const electionId = election.id.toString();
-                if (!uniqueElections.has(electionId)) {
-                    uniqueElections.set(electionId, {
-                        id: electionId,
-                        name: election.name
-                    });
+                
+                // For admin, show all active elections
+                // For voters, only show elections within voting period
+                if (currentRole === 'admin' || 
+                    (currentTime >= election.startTime && currentTime <= election.endTime)) {
+                    
+                    if (!uniqueElections.has(electionId)) {
+                        uniqueElections.set(electionId, {
+                            id: electionId,
+                            name: election.name,
+                            startTime: election.startTime,
+                            endTime: election.endTime
+                        });
+                    }
                 }
             }
         }
@@ -515,12 +631,20 @@ async function updateElectionDropdown() {
         sortedElections.forEach(election => {
             const optionText = `Election #${election.id}: ${election.name}`;
             
-            // Add to candidate management dropdown (only once)
-            candidateDropdown.add(new Option(optionText, election.id));
+            if (currentRole === 'admin' && candidateDropdown) {
+                candidateDropdown.add(new Option(optionText, election.id));
+            }
             
-            // Add to voting dropdown if it exists
             if (voteDropdown) {
-                voteDropdown.add(new Option(optionText, election.id));
+                const option = new Option(optionText, election.id);
+                voteDropdown.add(option);
+                
+                // Add timing information for voters
+                if (currentRole === 'voter') {
+                    const startDate = new Date(election.startTime * 1000).toLocaleString();
+                    const endDate = new Date(election.endTime * 1000).toLocaleString();
+                    option.title = `Voting period: ${startDate} to ${endDate}`;
+                }
             }
         });
 
@@ -529,14 +653,16 @@ async function updateElectionDropdown() {
             const noElectionOption = new Option("No active elections available", "");
             noElectionOption.disabled = true;
             
-            candidateDropdown.add(noElectionOption.cloneNode(true));
+            if (currentRole === 'admin' && candidateDropdown) {
+                candidateDropdown.add(noElectionOption.cloneNode(true));
+            }
             if (voteDropdown) {
                 voteDropdown.add(noElectionOption.cloneNode(true));
             }
         }
     } catch (error) {
         console.error('Error updating election dropdown:', error);
-        showNotification('Failed to load elections', 'danger');
+        showNotification('Failed to load elections: ' + error.message, 'danger');
     }
 }
 
@@ -590,5 +716,77 @@ async function updateCandidateDropdown(electionId) {
         console.error('Error updating candidate dropdown:', error);
         showNotification('Failed to load candidates', 'danger');
         dropdown.innerHTML = '<option value="">Error loading candidates</option>';
+    }
+}
+
+// Add this function to handle role switching
+async function switchRole(role) {
+    try {
+        // Check if user is admin
+        const isUserAdmin = await votingContract.methods.admins(currentAccount).call();
+        
+        // If user is not an admin but tries to switch to admin role
+        if (role === 'admin' && !isUserAdmin) {
+            showNotification('You do not have admin privileges', 'danger');
+            return;
+        }
+        
+        // If user is an admin but wants to vote, they need to switch to voter role
+        if (role === 'voter' && isUserAdmin) {
+            showNotification('Admins cannot vote. Please use a different account for voting.', 'warning');
+            return;
+        }
+
+        currentRole = role;
+        isAdmin = (role === 'admin' && isUserAdmin);
+
+        // Update UI
+        document.querySelectorAll('.role-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.textContent.toLowerCase() === role) {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Show/hide appropriate navigation
+        document.querySelector('.admin-nav').style.display = role === 'admin' ? 'block' : 'none';
+        document.querySelector('.voter-nav').style.display = role === 'voter' ? 'block' : 'none';
+        
+        // Reset view
+        showStep(role === 'admin' ? 1 : 3);
+        
+        showNotification(`Switched to ${role} mode`, 'success');
+    } catch (error) {
+        console.error('Error switching role:', error);
+        showNotification('Failed to switch role', 'danger');
+    }
+}
+
+// Add function to update voting time info
+async function updateVotingTimeInfo(electionId) {
+    const timeInfo = document.getElementById('votingTimeInfo');
+    if (!electionId) {
+        timeInfo.textContent = '';
+        return;
+    }
+
+    try {
+        const election = await votingContract.methods.elections(electionId).call();
+        const startDate = new Date(election.startTime * 1000).toLocaleString();
+        const endDate = new Date(election.endTime * 1000).toLocaleString();
+        const currentTime = Math.floor(Date.now() / 1000);
+
+        if (currentTime < election.startTime) {
+            timeInfo.className = 'text-warning';
+            timeInfo.textContent = `Voting starts at ${startDate}`;
+        } else if (currentTime > election.endTime) {
+            timeInfo.className = 'text-danger';
+            timeInfo.textContent = `Voting ended at ${endDate}`;
+        } else {
+            timeInfo.className = 'text-success';
+            timeInfo.textContent = `Voting is open until ${endDate}`;
+        }
+    } catch (error) {
+        timeInfo.textContent = '';
     }
 } 

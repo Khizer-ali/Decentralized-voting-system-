@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voting Dashboard</title>
+    <title>Admin Dashboard - Voting System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
             --primary-color: #6f42c1;
-            --primary-light: #9423c9;
-            --primary-dark: #290a35;
+            --primary-light: #8a089e;
+            --primary-dark: #713a87;
         }
 
         body {
@@ -46,111 +46,43 @@
 
         .btn-primary:hover {
             background-color: var(--primary-dark);
-            border-color: var(--primary-dark);
         }
 
-        #notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
+        .section {
             display: none;
         }
 
-        .step-content {
-            display: none;
-        }
-
-        .step-content.active {
+        .section.active {
             display: block;
-        }
-
-        .progress {
-            height: 5px;
-            margin-bottom: 20px;
-        }
-
-        .form-control:focus, .form-select:focus {
-            border-color: #6f42c1;
-            box-shadow: 0 0 0 0.2rem rgba(108, 92, 231, 0.25);
-        }
-
-        /* Add new styles for role selection */
-        .role-selector {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            background: linear-gradient(135deg, var(--primary-color), var(--primary-light));
-            padding: 10px 0;
-            z-index: 1030;
-        }
-
-        .role-btn {
-            background-color: transparent;
-            border: 2px solid white;
-            color: white;
-            padding: 5px 15px;
-            margin: 0 5px;
-            border-radius: 20px;
-        }
-
-        .role-btn.active {
-            background-color: white;
-            color: var(--primary-color);
         }
     </style>
 </head>
 <body>
-    <!-- Add this right after the body tag -->
-    <div class="role-selector text-center">
-        <button class="role-btn" onclick="switchRole('voter')">Voter</button>
-        <button class="role-btn" onclick="switchRole('admin')">Admin</button>
-    </div>
-
-    <!-- Modify the navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark fixed-top mt-5">
-        <!-- Admin Navigation -->
-        <div class="container admin-nav" style="display: none;">
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
             <a class="navbar-brand" href="index.html">Admin Dashboard</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="showStep(1)">Create Election</a>
+                        <a class="nav-link" href="#" onclick="showSection('createElection')">Create Election</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="showStep(2)">Manage Candidates</a>
+                        <a class="nav-link" href="#" onclick="showSection('manageCandidates')">Manage Candidates</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="showStep(4)">Results</a>
-                    </li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- Voter Navigation -->
-        <div class="container voter-nav" style="display: none;">
-            <a class="navbar-brand" href="index.html">Voter Dashboard</a>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="showStep(3)">Vote</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="showStep(4)">View Results</a>
+                        <a class="nav-link" href="#" onclick="showSection('viewResults')">View Results</a>
                     </li>
                 </ul>
             </div>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="progress">
-            <div class="progress-bar bg-primary" id="progressBar" role="progressbar" style="width: 25%"></div>
-        </div>
-
-        <!-- Step 1: Create Election -->
-        <div id="step1" class="step-content active">
+    <div class="container mt-4">
+        <!-- Create Election Section -->
+        <div id="createElection" class="section active">
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">Create New Election</h5>
@@ -180,8 +112,8 @@
             </div>
         </div>
 
-        <!-- Step 2: Manage Candidates -->
-        <div id="step2" class="step-content">
+        <!-- Manage Candidates Section -->
+        <div id="manageCandidates" class="section">
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">Add Candidates</h5>
@@ -196,12 +128,15 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Candidate Name</label>
-                            <input type="text" class="form-control" id="candidateName" required>
+                            <input type="text" class="form-control" id="candidateName" 
+                                required 
+                                maxlength="32" 
+                                pattern="^[a-zA-Z0-9\s\-\.]+$"
+                                title="Name can only contain letters, numbers, spaces, hyphens, and periods"
+                                placeholder="Enter candidate name">
+                            <small class="text-muted">Name must be between 1 and 32 characters</small>
                         </div>
-                        <button type="submit" class="btn btn-primary" data-loading-text="Adding...">
-                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-                            Add Candidate
-                        </button>
+                        <button type="submit" class="btn btn-primary">Add Candidate</button>
                     </form>
                     <div id="candidatesList" class="mt-4">
                         <!-- Candidates will be listed here -->
@@ -210,35 +145,8 @@
             </div>
         </div>
 
-        <!-- Step 3: Vote -->
-        <div id="step3" class="step-content">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Cast Your Vote</h5>
-                </div>
-                <div class="card-body">
-                    <form id="voteForm" onsubmit="return castVote(event)">
-                        <div class="mb-3">
-                            <label class="form-label">Select Election</label>
-                            <select class="form-select" id="voteElectionId" required onchange="updateCandidateDropdown(this.value)">
-                                <option value="">Choose an active election...</option>
-                            </select>
-                            <small class="text-muted" id="votingTimeInfo"></small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Select Candidate</label>
-                            <select class="form-select" id="voteCandidateId" required>
-                                <option value="">First select an election...</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Cast Vote</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- Step 4: Results -->
-        <div id="step4" class="step-content">
+        <!-- View Results Section -->
+        <div id="viewResults" class="section">
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">Election Results</h5>
@@ -246,30 +154,15 @@
                 <div class="card-body">
                     <form id="resultsForm" onsubmit="return getResults(event)">
                         <div class="mb-3">
-                            <label class="form-label">Election ID</label>
-                            <input type="number" class="form-control" id="resultsElectionId" required>
+                            <label class="form-label">Select Election</label>
+                            <select class="form-select" id="resultsElectionId" required>
+                                <option value="">Choose an election...</option>
+                            </select>
                         </div>
                         <button type="submit" class="btn btn-primary">View Results</button>
                     </form>
                     <div id="resultsDisplay" class="mt-4">
                         <!-- Results will be displayed here -->
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Step 5: Active Elections -->
-        <div id="step5" class="step-content">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Active Elections</h5>
-                </div>
-                <div class="card-body">
-                    <button class="btn btn-primary mb-3" onclick="loadActiveElections()">
-                        <i class="fas fa-sync-alt me-2"></i>Refresh List
-                    </button>
-                    <div id="activeElectionsList" class="list-group">
-                        <!-- Active elections will be listed here -->
                     </div>
                 </div>
             </div>
@@ -297,6 +190,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
-    <script src="dashboard.js"></script>
+    <script src="admin.js"></script>
 </body>
 </html> 

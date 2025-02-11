@@ -14,6 +14,8 @@ contract VotingSystem {
         string name;
         bool isActive;
         uint candidateCount;
+        uint startTime;
+        uint endTime;
         mapping(uint => Candidate) candidates;
         mapping(address => bool) hasVoted;
         mapping(string => bool) candidateNames; // To track duplicate candidate names
@@ -23,12 +25,29 @@ contract VotingSystem {
     uint public electionCount;
     mapping(uint => Election) public elections;
     mapping(string => bool) private electionNames; // To track duplicate election names
+    mapping(address => bool) public admins;
+    address public owner;
 
     // Events to track actions
     event ElectionCreated(uint electionId);
     event CandidateAdded(uint electionId, uint candidateId);
     event VoteCasted(uint electionId, uint candidateId, address voter);
     event ElectionClosed(uint electionId);
+
+    constructor() {
+        owner = msg.sender;
+        admins[msg.sender] = true;
+    }
+
+    modifier onlyAdmin() {
+        require(admins[msg.sender], "Only admins can perform this action");
+        _;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can perform this action");
+        _;
+    }
 
     modifier electionExists(uint _electionId) {
         require(elections[_electionId].exists, "Election does not exist");
@@ -40,9 +59,32 @@ contract VotingSystem {
         _;
     }
 
-    function createElection(string memory _name) public {
-        require(bytes(_name).length > 0, "Election name cannot be empty");
+    modifier votingOpen(uint _electionId) {
+        require(block.timestamp >= elections[_electionId].startTime, "Voting has not started yet");
+        require(block.timestamp <= elections[_electionId].endTime, "Voting has ended");
+        _;
+    }
+
+    modifier canAddCandidates(uint _electionId) {
+        require(block.timestamp < elections[_electionId].startTime, "Cannot add candidates after voting has started");
+        _;
+    }
+
+    function addAdmin(address _admin) public onlyOwner {
+        admins[_admin] = true;
+    }
+
+    function removeAdmin(address _admin) public onlyOwner {
+        require(_admin != owner, "Cannot remove owner from admins");
+        admins[_admin] = false;
+    }
+
+    function createElection(string memory _name, uint _startTime, uint _endTime) public onlyAdmin {
+        require(bytes(_name).length > 0 && bytes(_name).length <= 32, "Election name must be between 1 and 32 characters");
         require(!electionNames[_name], "Election with this name already exists");
+        require(_startTime > block.timestamp, "Start time must be in the future");
+        require(_endTime > _startTime, "End time must be after start time");
+        require(_endTime - _startTime <= 30 days, "Election duration cannot exceed 30 days");
         
         electionCount++;
         Election storage election = elections[electionCount];
@@ -50,18 +92,23 @@ contract VotingSystem {
         election.name = _name;
         election.isActive = true;
         election.exists = true;
+        election.startTime = _startTime;
+        election.endTime = _endTime;
         electionNames[_name] = true;
         
         emit ElectionCreated(electionCount);
     }
 
     function addCandidate(uint _electionId, string memory _name) public 
+        onlyAdmin 
         electionExists(_electionId) 
-        electionActive(_electionId) 
+        electionActive(_electionId)
+        canAddCandidates(_electionId)
     {
-        require(bytes(_name).length > 0, "Candidate name cannot be empty");
+        require(bytes(_name).length > 0 && bytes(_name).length <= 32, "Candidate name must be between 1 and 32 characters");
         Election storage election = elections[_electionId];
         require(!election.candidateNames[_name], "Candidate with this name already exists");
+        require(election.candidateCount < 20, "Maximum candidate limit reached");
         
         election.candidateCount++;
         election.candidates[election.candidateCount] = Candidate(
@@ -77,8 +124,10 @@ contract VotingSystem {
 
     function vote(uint _electionId, uint _candidateId) public 
         electionExists(_electionId)
-        electionActive(_electionId) 
+        electionActive(_electionId)
+        votingOpen(_electionId)
     {
+        require(!admins[msg.sender], "Admins cannot vote");
         Election storage election = elections[_electionId];
         require(!election.hasVoted[msg.sender], "You have already voted");
         require(_candidateId > 0 && _candidateId <= election.candidateCount, "Invalid candidate");
@@ -104,5 +153,12 @@ contract VotingSystem {
         require(elections[_electionId].isActive, "Election is already closed");
         elections[_electionId].isActive = false;
         emit ElectionClosed(_electionId);
+    }
+
+    function hasVoted(uint _electionId, address _voter) public view 
+        electionExists(_electionId) 
+        returns (bool) 
+    {
+        return elections[_electionId].hasVoted[_voter];
     }
 }
