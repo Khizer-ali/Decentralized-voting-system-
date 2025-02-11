@@ -62,6 +62,11 @@
             height: 5px;
             margin-bottom: 20px;
         }
+
+        .form-control:focus, .form-select:focus {
+            border-color: #6c5ce7;
+            box-shadow: 0 0 0 0.2rem rgba(108, 92, 231, 0.25);
+        }
     </style>
 </head>
 <body>
@@ -85,6 +90,9 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="#" onclick="showStep(4)">Results</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showStep(5)">Active Elections</a>
                     </li>
                 </ul>
             </div>
@@ -123,14 +131,19 @@
                 <div class="card-body">
                     <form id="addCandidateForm" onsubmit="return addCandidate(event)">
                         <div class="mb-3">
-                            <label class="form-label">Election ID</label>
-                            <input type="number" class="form-control" id="candidateElectionId" required>
+                            <label class="form-label">Select Election</label>
+                            <select class="form-select" id="candidateElectionId" required>
+                                <option value="">Choose an active election...</option>
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Candidate Name</label>
                             <input type="text" class="form-control" id="candidateName" required>
                         </div>
-                        <button type="submit" class="btn btn-primary">Add Candidate</button>
+                        <button type="submit" class="btn btn-primary" data-loading-text="Adding...">
+                            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                            Add Candidate
+                        </button>
                     </form>
                     <div id="candidatesList" class="mt-4">
                         <!-- Candidates will be listed here -->
@@ -148,12 +161,16 @@
                 <div class="card-body">
                     <form id="voteForm" onsubmit="return castVote(event)">
                         <div class="mb-3">
-                            <label class="form-label">Election ID</label>
-                            <input type="number" class="form-control" id="voteElectionId" required>
+                            <label class="form-label">Select Election</label>
+                            <select class="form-select" id="voteElectionId" required onchange="updateCandidateDropdown(this.value)">
+                                <option value="">Choose an active election...</option>
+                            </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Candidate ID</label>
-                            <input type="number" class="form-control" id="voteCandidateId" required>
+                            <label class="form-label">Select Candidate</label>
+                            <select class="form-select" id="voteCandidateId" required>
+                                <option value="">First select an election...</option>
+                            </select>
                         </div>
                         <button type="submit" class="btn btn-primary">Cast Vote</button>
                     </form>
@@ -177,6 +194,23 @@
                     </form>
                     <div id="resultsDisplay" class="mt-4">
                         <!-- Results will be displayed here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Active Elections -->
+        <div id="step5" class="step-content">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Active Elections</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-primary mb-3" onclick="loadActiveElections()">
+                        <i class="fas fa-sync-alt me-2"></i>Refresh List
+                    </button>
+                    <div id="activeElectionsList" class="list-group">
+                        <!-- Active elections will be listed here -->
                     </div>
                 </div>
             </div>
